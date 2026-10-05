@@ -1,0 +1,81 @@
+# MikuKits 消息（全部 MiniMessage 格式）
+# 所有玩家可见文本与菜单文本均可在此自定义。占位符用 {xxx} 表示。
+
+prefix: "<gradient:#5af7b4:#5ea4f7><bold>礼包</bold></gradient> <dark_gray>»</dark_gray> "
+
+# 消息 key 缺失时的兜底模板（{key} 为缺失的 key）。仅当 messages.yml 里本项也被删除时才使用代码内英文兜底。
+error:
+  missing-message: "<red>缺少消息: {key}"
+
+# 时长单位模板（{value} 为数值）。用于冷却倒计时、冷却时长显示。
+time:
+  zero: "<gray>0秒"
+  day: "<yellow>{value}</yellow><gray>天</gray>"
+  hour: "<yellow>{value}</yellow><gray>时</gray>"
+  minute: "<yellow>{value}</yellow><gray>分</gray>"
+  second: "<yellow>{value}</yellow><gray>秒</gray>"
+
+menu:
+  main-title: "<gradient:#5af7b4:#5ea4f7><bold>礼包中心</bold></gradient>"
+  feedback-title: "<gradient:#5af7b4:#5ea4f7><bold>领取结果</bold></gradient>"
+  loading: "<prefix><yellow>数据加载中，请稍后再试。"
+  load-failed: "<prefix><red>你的礼包数据加载失败，请联系管理员。"
+  empty: "<gray>暂无可领取的礼包"
+  page-info: "<gray>第 <white>{page}</white>/<white>{total}</white> 页 · 共 <white>{count}</white> 个礼包"
+  prev-page: "<gray>« 上一页"
+  next-page: "<gray>下一页 »"
+  claim-button: "<green>确认领取"
+  return-button: "<gray>返回"
+  back-button: "<gray>返回菜单"
+  rewards-header: "<yellow>奖励:"
+  reward-line: "  <white>• </white>{preview}"
+
+  # 详情页的状态行
+  detail-status:
+    available: "<green>现在可以领取"
+    cooldown: "<red>冷却中，剩余 {time}"
+    max-claims: "<gold>已达到总领取次数上限"
+    period-exceeded: "<gold>本周期领取次数已用完"
+    unknown: "<gray>暂不可领取"
+
+  # 按钮悬停提示（tooltip）
+  tooltip:
+    title: "{kit}"
+    cooldown: "<gray>冷却: {duration}"
+    total: "<gray>总次数: {used}/{max}"
+    period: "<gray>{period}: {used}/{max}"
+    period-name:
+      daily: "每日"
+      weekly: "每周"
+      monthly: "每月"
+
+# 奖励预览行（{preview} 会被替换为下方 reward.* 渲染结果）
+reward:
+  item: "<gray>x{amount} <white>{name}</white>"
+  money: "<gold>{amount} 金币</gold>"
+  console-command: "<dark_gray>控制台指令: <gray>{command}"
+  player-command: "<dark_gray>玩家指令: <gray>{command}"
+
+claim:
+  success: "<prefix><green>成功领取 <white>{kit}</white>！"
+  auto-claim: "<prefix><aqua>已自动为你发放礼包 <white>{kit}</white>！"
+  cooldown: "<prefix><red><white>{kit}</white> 仍在冷却中，剩余 <yellow>{time}</yellow>。"
+  max-claims: "<prefix><red><white>{kit}</white> 已达到领取次数上限。"
+  period-exceeded: "<prefix><red><white>{kit}</white> 本周期领取次数已用完。"
+  failed: "<prefix><red>礼包 <white>{kit}</white> 发放失败，本次未消耗领取次数，请稍后重试。"
+  inventory-full: "<prefix><yellow>背包已满，<white>{amount}</white> 件物品已掉落在你脚下，请尽快拾取（掉落物一段时间后会消失）。"
+  no-permission: "<prefix><red>你没有权限领取该礼包。"
+
+command:
+  reload: "<prefix><green>已重新加载配置，共 <white>{count}</white> 个礼包。"
+  give-success: "<prefix><green>已向 <white>{player}</white> 发放礼包 <white>{kit}</white>。"
+  give-offline: "<prefix><red>发放取消：<white>{player}</white> 已离线。"
+  give-not-ready: "<prefix><red>发放失败：<white>{player}</white> 的数据尚未就绪，请让其重进后再试。"
+  give-reward-failed: "<prefix><red>发放失败：礼包 <white>{kit}</white> 的奖励全部发放失败，请检查控制台日志。"
+  info-header: "<prefix><gold>MikuKits <gray>v{version}"
+  info-body: "<dark_gray>  礼包: <white>{kits}<dark_gray>  缓存玩家: <white>{cached}<dark_gray>  待写回: <white>{pending}<dark_gray>  Vault: <white>{vault}"
+  console-no-menu: "<prefix><red>控制台无法打开菜单，请指定玩家。"
+  not-found: "<prefix><red>礼包不存在: <white>{kit}"
+  player-not-found: "<prefix><red>未找到该玩家。"
+  vault-on: "<green>已启用"
+  vault-off: "<red>未启用"

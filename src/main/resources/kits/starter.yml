@@ -1,0 +1,23 @@
+# 新手礼包：进服自动领取，仅可领 1 次
+display-name: "<gradient:#5af7b4:#5ea4f7>新手礼包</gradient>"
+icon-material: STONE_PICKAXE
+permission: mikukits.kit.starter
+# 权限节点默认值：true=所有玩家默认可领，false=需在权限插件中授权，op=仅管理员，not_op=非管理员
+permission-default: true
+auto-claim: true
+cooldown-seconds: 0
+max-claims: 1
+sort-order: 1
+
+rewards:
+  - type: item
+    material: STONE_SWORD
+    amount: 1
+  - type: item
+    material: BREAD
+    amount: 16
+  - type: item
+    material: STONE_PICKAXE
+    amount: 1
+  - type: console-command
+    command: "broadcast {player} 领取了新手礼包，欢迎加入！"

@@ -1,0 +1,22 @@
+# 每日补给：每个自然日可领 1 次（period-limits.daily），无冷却
+display-name: "<gradient:#f7d45a:#f7945a>每日补给</gradient>"
+icon-material: GOLDEN_CARROT
+permission: mikukits.kit.daily
+# 权限节点默认值：true=所有玩家默认可领，false=需在权限插件中授权，op=仅管理员，not_op=非管理员
+permission-default: true
+auto-claim: false
+cooldown-seconds: 0
+max-claims: 0
+period-limits:
+  daily: 1
+sort-order: 10
+
+rewards:
+  - type: item
+    material: COOKED_BEEF
+    amount: 12
+  - type: item
+    material: GOLDEN_APPLE
+    amount: 2
+  - type: money
+    amount: 100.0
