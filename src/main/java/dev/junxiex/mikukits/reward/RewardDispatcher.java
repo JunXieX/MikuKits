@@ -9,10 +9,10 @@ import dev.junxiex.mikukits.kit.Kit;
 import dev.junxiex.mikukits.kit.reward.Reward;
 import dev.junxiex.mikukits.util.Permissions;
 import net.kyori.adventure.text.Component;
-import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 
 import java.util.Map;
+import java.util.function.Consumer;
 
 /**
  * 领取发放编排。必须在拥有该玩家的线程（玩家/区域/实体线程）调用。
@@ -85,26 +85,31 @@ public final class RewardDispatcher {
 
     /**
      * 管理员强制发放（绕过全部限制，仍记录）。
+     * <p>
+     * 本方法在目标玩家线程执行，而反馈需送达到指令执行者。执行者可能是另一区域的玩家，
+     * 故不直接接收 {@link CommandSender}，而是接收一个"把消息投递到正确线程"的消费者，
+     * 由调用方（{@code CommandService}）负责线程归属。若直接向另一区域玩家的实体发送消息，
+     * 在 Folia 下属非法跨区域实体访问。
      *
-     * @param feedback 接收结果反馈的命令发送者（管理员/控制台），与目标玩家解耦
+     * @param feedback 接收结果反馈的投递函数（已由调用方处理线程归属）
      */
-    public void forceGive(Player player, Kit kit, CommandSender feedback) {
+    public void forceGive(Player player, Kit kit, Consumer<Component> feedback) {
         if (!player.isOnline()) {
-            feedback.sendMessage(giveMessage("command.give-offline", player, kit));
+            feedback.accept(giveMessage("command.give-offline", player, kit));
             return;
         }
         PlayerKitData data = plugin.dataStore().get(player.getUniqueId());
         if (data == null || !data.loaded()) {
-            feedback.sendMessage(giveMessage("command.give-not-ready", player, kit));
+            feedback.accept(giveMessage("command.give-not-ready", player, kit));
             return;
         }
         if (!grantAll(player, kit)) {
-            feedback.sendMessage(giveMessage("command.give-reward-failed", player, kit));
+            feedback.accept(giveMessage("command.give-reward-failed", player, kit));
             return;
         }
         plugin.limitService().recordClaim(kit, data);
         plugin.dataStore().enqueue(data, kit.id());
-        feedback.sendMessage(giveMessage("command.give-success", player, kit));
+        feedback.accept(giveMessage("command.give-success", player, kit));
     }
 
     /**

@@ -50,31 +50,43 @@ public final class CustomClickListener implements Listener {
             return;
         }
 
-        String encoded = ClickPayload.decode(e.getTag() == null ? null : e.getTag().string());
-        ClickPayload.Parsed p = ClickPayload.parse(encoded);
-        DialogMenuService menu = plugin.menuService();
+        // 负载完全由客户端提供且可被任意伪造（含非法 NBT）。解析与后续操作都必须整体兜住异常，
+        // 否则异常会沿数据包处理链路上抛，影响该次连接的数据包处理。
+        ClickPayload.Parsed p;
+        try {
+            String snbt = e.getTag() == null ? null : e.getTag().string();
+            p = ClickPayload.parse(ClickPayload.decode(snbt));
+        } catch (RuntimeException ex) {
+            // 伪造/损坏的负载：静默丢弃，不反馈（避免被用作刷屏手段）
+            return;
+        }
 
-        switch (p.action()) {
-            case ClickPayload.SELECT -> {
-                Kit kit = plugin.kitManager().get(p.kitId());
-                if (kit != null) {
-                    menu.openDetail(player, kit, p.page());
-                } else {
-                    menu.openMain(player, p.page());
-                }
-            }
-            case ClickPayload.CLAIM -> {
-                Kit kit = plugin.kitManager().get(p.kitId());
-                if (kit != null) {
-                    LimitResult r = plugin.dispatcher().dispatch(player, kit);
-                    if (r != LimitResult.CANCELLED) {
-                        menu.feedback(player, menu.resultMessage(r, kit,
-                                plugin.dataStore().get(player.getUniqueId())), p.page());
+        DialogMenuService menu = plugin.menuService();
+        try {
+            switch (p.action()) {
+                case ClickPayload.SELECT -> {
+                    Kit kit = plugin.kitManager().get(p.kitId());
+                    if (kit != null) {
+                        menu.openDetail(player, kit, p.page());
+                    } else {
+                        menu.openMain(player, p.page());
                     }
                 }
+                case ClickPayload.CLAIM -> {
+                    Kit kit = plugin.kitManager().get(p.kitId());
+                    if (kit != null) {
+                        LimitResult r = plugin.dispatcher().dispatch(player, kit);
+                        if (r != LimitResult.CANCELLED) {
+                            menu.feedback(player, menu.resultMessage(r, kit,
+                                    plugin.dataStore().get(player.getUniqueId())), p.page());
+                        }
+                    }
+                }
+                // PREV/NEXT/BACK 与未知动作都是"回到指定页的主菜单"
+                default -> menu.openMain(player, p.page());
             }
-            // PREV/NEXT/BACK 与未知动作都是"回到指定页的主菜单"
-            default -> menu.openMain(player, p.page());
+        } catch (Exception ex) {
+            plugin.getLogger().warning("处理菜单点击失败（负载: " + p.action() + "）: " + ex.getMessage());
         }
     }
 

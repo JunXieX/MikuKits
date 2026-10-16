@@ -68,6 +68,7 @@ claim:
 
 command:
   reload: "<prefix><green>已重新加载配置，共 <white>{count}</white> 个礼包。"
+  reload-failed: "<prefix><red>重新加载失败，已保留原有配置，请查看控制台日志。"
   give-success: "<prefix><green>已向 <white>{player}</white> 发放礼包 <white>{kit}</white>。"
   give-offline: "<prefix><red>发放取消：<white>{player}</white> 已离线。"
   give-not-ready: "<prefix><red>发放失败：<white>{player}</white> 的数据尚未就绪，请让其重进后再试。"

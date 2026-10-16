@@ -11,6 +11,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.UUID;
+import java.util.logging.Logger;
 
 /**
  * SQLite 存储实现。WAL 模式，单连接。
@@ -20,6 +21,8 @@ import java.util.UUID;
  * {@link #dbLock} 上串行化。SQLite 本身也会串行化写入，锁竞争开销可忽略。
  */
 public final class SqliteStorage implements Storage {
+
+    private static final Logger LOGGER = Logger.getLogger(SqliteStorage.class.getName());
 
     private final Object dbLock = new Object();
     private final Connection connection;
@@ -56,7 +59,13 @@ public final class SqliteStorage implements Storage {
                 ps.setString(1, uuid.toString());
                 try (ResultSet rs = ps.executeQuery()) {
                     while (rs.next()) {
-                        KitRecord rec = data.record(rs.getString("kit_id"));
+                        String kitId = rs.getString("kit_id");
+                        // 损坏/手工改库可能留下空 id；空 id 既无意义，也会让内存记录永远无法被礼包引用
+                        if (kitId == null || kitId.isEmpty()) {
+                            LOGGER.warning("跳过玩家 " + uuid + " 的一条空 kit_id 记录");
+                            continue;
+                        }
+                        KitRecord rec = data.record(kitId);
                         rec.setLastClaimAt(rs.getLong("last_claim_at"));
                         rec.loadPeriods(rs.getString("period_data"));
                         rec.loadTotalClaims(rs.getInt("total_claims"));

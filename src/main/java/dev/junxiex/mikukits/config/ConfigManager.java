@@ -123,7 +123,12 @@ public final class ConfigManager {
                 try {
                     YamlConfiguration yml = YamlConfiguration.loadConfiguration(f);
                     Kit kit = parser.parse(name, yml);
-                    kits.put(kit.id(), kit);
+                    Kit previous = kits.put(kit.id(), kit);
+                    if (previous != null) {
+                        // 文件名大小写不同会归一为同一 id，后解析者静默覆盖前者，属难以察觉的配置冲突
+                        plugin.getLogger().warning("礼包 id 冲突: '" + f.getName()
+                                + "' 与另一文件解析为同一 id '" + kit.id() + "'，仅其一会生效");
+                    }
                 } catch (Exception ex) {
                     plugin.getLogger().severe("解析礼包 " + f.getName() + " 失败: " + ex.getMessage());
                 }
@@ -156,7 +161,8 @@ public final class ConfigManager {
         String token = "{" + componentKey + "}";
         int idx = raw.indexOf(token);
         if (idx < 0) {
-            return message(key, placeholders);
+            // 模板里没有该占位符：直接解析已算好的 raw，避免再走一次 raw 的完整替换流程
+            return parse(raw);
         }
         Component head = parse(raw.substring(0, idx));
         Component tail = parse(raw.substring(idx + token.length()));

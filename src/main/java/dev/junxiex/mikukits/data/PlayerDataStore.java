@@ -4,6 +4,7 @@ import dev.junxiex.mikukits.storage.Storage;
 
 import java.util.ArrayList;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -113,7 +114,11 @@ public final class PlayerDataStore {
     }
 
     /** 调用方必须持有 ioLock。写库失败时把已出队的行放回队首，避免丢数据且保持 FIFO。 */
-    private void writeBatchLocked(List<Storage.KitRow> batch) {
+    private void writeBatchLocked(List<Storage.KitRow> rawBatch) {
+        // 同一 (uuid,kit) 在批次里常有多条快照（领取时入队一次、离线时 enqueueAll 再一次）。
+        // 每条快照都是完整状态，写库又是 UPSERT，故只需保留批次内最后一条，结果完全等价，
+        // 但能显著减少写库次数：10 个礼包的一次会话由 20 次写降为实际变更过的那些行。
+        List<Storage.KitRow> batch = lastWins(rawBatch);
         try {
             storage.saveBatch(batch);
         } catch (RuntimeException ex) {
@@ -126,6 +131,15 @@ public final class PlayerDataStore {
         }
     }
 
+    /** 同一 (uuid,kit) 只保留批次内最后一条快照，其余丢弃。顺序按首次出现位置保持。 */
+    private static List<Storage.KitRow> lastWins(List<Storage.KitRow> rows) {
+        Map<String, Storage.KitRow> byKey = new LinkedHashMap<>(Math.max(16, rows.size()));
+        for (Storage.KitRow row : rows) {
+            byKey.put(row.uuid() + "\u0000" + row.kitId(), row);
+        }
+        return new ArrayList<>(byKey.values());
+    }
+
     public int pendingCount() {
         return pending.size();
     }
@@ -134,7 +148,10 @@ public final class PlayerDataStore {
         return cache.size();
     }
 
+    /** 在 ioLock 下关闭连接：若关服时恰有 flush 任务正在写库，等待其完成后再关，避免批量写到一半连接失效。 */
     public void close() {
-        storage.close();
+        synchronized (ioLock) {
+            storage.close();
+        }
     }
 }
