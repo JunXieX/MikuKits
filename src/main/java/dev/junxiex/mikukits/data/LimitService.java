@@ -16,11 +16,6 @@ public final class LimitService {
 
     private final ZoneId zone = ZoneId.systemDefault();
 
-    /** 周期计算使用的时区。全插件统一从这里取，避免多处各自 systemDefault 造成边界不一致。 */
-    public ZoneId zone() {
-        return zone;
-    }
-
     /**
      * 校验玩家能否领取礼包（含权限）。
      *

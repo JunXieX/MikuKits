@@ -5,7 +5,10 @@ import dev.junxiex.mikukits.data.PlayerKitData;
 import java.util.UUID;
 
 /**
- * 玩家数据存储接口。所有方法均为阻塞 IO，只允许在 AsyncScheduler 线程调用。
+ * 玩家数据存储接口。
+ * <p>
+ * 各方法的线程约束由调用方保证：{@code load}/{@code saveBatch} 只在异步线程调用；
+ * {@code close} 在关服时由主线程调用。实现必须自行串行化，不得依赖"调用者总是同一线程"。
  */
 public interface Storage {
 

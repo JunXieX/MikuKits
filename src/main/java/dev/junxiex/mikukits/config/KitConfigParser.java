@@ -49,7 +49,7 @@ public final class KitConfigParser {
 
         ItemStack icon = readIcon(id, sec);
         boolean autoClaim = sec.getBoolean("auto-claim", false);
-        long cooldownMillis = sec.getLong("cooldown-seconds", 0L) * 1000L;
+        long cooldownMillis = readCooldownMillis(id, sec);
         int maxClaims = sec.getInt("max-claims", 0);
         int sortOrder = sec.getInt("sort-order", 0);
 
@@ -96,6 +96,29 @@ public final class KitConfigParser {
 
         return new Kit(id, displayName, ConfigManager.plain(displayName), icon, permission,
                 permissionDefault, autoClaim, cooldownMillis, maxClaims, periodLimits, rewards, sortOrder);
+    }
+
+    /**
+     * 读取冷却秒数并转为毫秒。
+     * <p>
+     * 负数在语义上无意义（会变成"永久无冷却"），溢出则会让 cooldownMillis 变成负数或极小值，
+     * 使冷却判定彻底失效；两者都必须钳制并告警，否则属于静默的配置失效。
+     */
+    private long readCooldownMillis(String kitId, ConfigurationSection sec) {
+        long seconds = sec.getLong("cooldown-seconds", 0L);
+        if (seconds <= 0) {
+            if (seconds < 0) {
+                logger.warning("礼包 " + kitId + " 的 cooldown-seconds=" + seconds
+                        + " 为负数，已按 0（无冷却）处理");
+            }
+            return 0L;
+        }
+        if (seconds > Long.MAX_VALUE / 1000L) {
+            logger.warning("礼包 " + kitId + " 的 cooldown-seconds=" + seconds
+                    + " 过大，已按最大值处理");
+            return Long.MAX_VALUE;
+        }
+        return seconds * 1000L;
     }
 
     private static ConfigurationSection toSection(Map<?, ?> map) {
@@ -178,7 +201,13 @@ public final class KitConfigParser {
         String b64 = rs.getString("item");
         if (b64 != null && !b64.isEmpty()) {
             try {
-                return ItemStack.deserializeBytes(Base64.getDecoder().decode(b64));
+                ItemStack stack = ItemStack.deserializeBytes(Base64.getDecoder().decode(b64));
+                // base64 可能序列化的是空气（空栈）：发空气等于什么都没给，属静默失效，必须拦截
+                if (stack == null || stack.getType().isAir()) {
+                    logger.warning("礼包 " + kitId + " 的物品奖励 item 解析为空气（空物品），已跳过");
+                    return null;
+                }
+                return stack;
             } catch (RuntimeException ex) {
                 logger.warning("礼包 " + kitId + " 的物品奖励 base64 无法解析（" + ex.getMessage()
                         + "），尝试回退到 material");
@@ -187,7 +216,8 @@ public final class KitConfigParser {
         String mat = rs.getString("material");
         if (mat != null) {
             Material m = Material.matchMaterial(mat);
-            if (m != null) {
+            // 非物品类 Material（AIR/WATER 等）构造 ItemStack 会抛异常，必须提前拦下
+            if (m != null && m.isItem()) {
                 return new ItemStack(m);
             }
             logger.warning("礼包 " + kitId + " 的物品奖励 material='" + mat + "' 不是有效物品，已跳过");
@@ -202,7 +232,12 @@ public final class KitConfigParser {
         String b64 = sec.getString("icon");
         if (b64 != null && !b64.isEmpty()) {
             try {
-                return ItemStack.deserializeBytes(Base64.getDecoder().decode(b64));
+                ItemStack icon = ItemStack.deserializeBytes(Base64.getDecoder().decode(b64));
+                // 空气图标在详情页会渲染成空白，直接降级为 CHEST 更符合预期
+                if (icon != null && !icon.getType().isAir()) {
+                    return icon;
+                }
+                logger.warning("礼包 " + kitId + " 的 icon 解析为空气（空物品），已回退为 CHEST");
             } catch (RuntimeException ex) {
                 logger.warning("礼包 " + kitId + " 的 icon base64 无法解析（" + ex.getMessage()
                         + "），尝试回退到 icon-material");
@@ -211,7 +246,9 @@ public final class KitConfigParser {
         String mat = sec.getString("icon-material");
         if (mat != null) {
             Material m = Material.matchMaterial(mat);
-            if (m != null) {
+            // 非物品类 Material 会让 new ItemStack 抛异常，进而导致整个礼包解析失败被丢弃；
+            // 这里只降级图标，保住该礼包本身
+            if (m != null && m.isItem()) {
                 return new ItemStack(m);
             }
             logger.warning("礼包 " + kitId + " 的 icon-material='" + mat + "' 不是有效物品，已回退为 CHEST");

@@ -25,10 +25,12 @@ import org.bukkit.plugin.java.JavaPlugin;
 
 import java.io.File;
 import java.sql.SQLException;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 
 /**
  * MikuKits 主类。兼容 Paper 与 Folia（单代码库，全部使用区域/异步调度器）。
@@ -99,22 +101,46 @@ public final class MikuKitsPlugin extends JavaPlugin {
         getServer().getAsyncScheduler().cancelTasks(this);
         try {
             dataStore.drainAndFlush();
+            int left = dataStore.pendingCount();
+            if (left > 0) {
+                // drainAndFlush 失败时会把整批行放回队列，此处必须显式告警：这些数据将随连接关闭丢失
+                getLogger().severe("关闭时仍有 " + left + " 条领取数据未能写回数据库，这些数据将丢失");
+            }
         } catch (Exception ex) {
             getLogger().warning("关闭时写回失败: " + ex.getMessage());
         }
         dataStore.close();
     }
 
-    /** 重新加载配置与礼包表。礼包表立即（原子）生效；权限表与调度器属全局状态，必要时回到全局区域线程。 */
-    public void reloadConfigs() {
-        Map<String, Kit> kits = loadKits();
-        // Folia 下玩家执行 /kits reload 时当前是区域线程，而 addPermission/removePermission
-        // 会遍历并重算所有在线玩家权限，属全局状态修改，必须回到全局区域线程
+    /**
+     * 重新加载配置与礼包表。礼包表立即（原子）生效；权限表与调度器属全局状态，必要时回到全局区域线程。
+     * <p>
+     * 配置解析含文件 IO 与 ItemStack 反序列化。Folia 下玩家执行 /kits reload 时正处于其区域 tick
+     * 线程，若在此直接做文件 IO 会拖慢该区域内所有实体；而 ItemStack 反序列化又要求 tick 线程，
+     * 故整体投递到全局区域线程执行（该线程同样是 tick 线程，且不阻塞任何玩家区域）。
+     *
+     * @param onDone 重载结束后的回调，入参为是否成功，同样在全局区域线程执行，供指令执行者反馈
+     */
+    public void reloadConfigs(Consumer<Boolean> onDone) {
         if (Bukkit.isGlobalTickThread()) {
-            applyGlobalState(kits);
+            applyReload(onDone);
         } else {
-            getServer().getGlobalRegionScheduler().run(this, task -> applyGlobalState(kits));
+            getServer().getGlobalRegionScheduler().run(this, task -> applyReload(onDone));
         }
+    }
+
+    /** 在全局区域线程执行实际重载。解析失败时保留原有配置，避免半成品配置污染运行期状态。 */
+    private void applyReload(Consumer<Boolean> onDone) {
+        Map<String, Kit> kits;
+        try {
+            kits = loadKits();
+        } catch (Exception ex) {
+            getLogger().severe("重新加载配置失败，已保留原有配置: " + ex.getMessage());
+            onDone.accept(false);
+            return;
+        }
+        applyGlobalState(kits);
+        onDone.accept(true);
     }
 
     /** 解析配置并原子替换礼包表，返回新表。可在任意线程调用。 */
@@ -154,9 +180,17 @@ public final class MikuKitsPlugin extends JavaPlugin {
     private void registerKitPermissions(Map<String, Kit> kits) {
         PluginManager pm = getServer().getPluginManager();
         Set<String> current = new HashSet<>();
+        Map<String, PermissionDefault> nodeDefaults = new HashMap<>();
         for (Kit kit : kits.values()) {
             String node = kit.permission();
             current.add(node);
+            PermissionDefault previousDefault = nodeDefaults.putIfAbsent(node, kit.permissionDefault());
+            if (previousDefault != null && previousDefault != kit.permissionDefault()) {
+                // 多个礼包复用同一权限节点却声明了不同默认值：最终只有一个默认值生效，
+                // 且取决于解析顺序，属难以排查的配置冲突，必须显式告警
+                getLogger().warning("权限节点 '" + node + "' 被多个礼包复用且 permission-default 不一致（"
+                        + previousDefault + " / " + kit.permissionDefault() + "），仅其中一个会生效");
+            }
             Permission existing = pm.getPermission(node);
             if (existing != null) {
                 if (existing.getDefault() == kit.permissionDefault()) {

@@ -230,6 +230,8 @@ public final class DialogMenuService {
     /** 组装多行 tooltip（直接拼 Component，避免序列化往返；周期 key 由调用方预计算复用）。 */
     private Component buildTooltip(Kit kit, PlayerKitData data, Map<PeriodType, String> periodKeys) {
         ConfigManager cfg = plugin.configManager();
+        // 记录只取一次：一次渲染内 data 不会变化，重复查找纯属浪费
+        KitRecord rec = data == null ? null : data.existingRecord(kit.id());
         List<Component> lines = new ArrayList<>();
         lines.add(cfg.message("menu.tooltip.title", null, "kit", kit.displayName()));
         if (kit.cooldownMillis() > 0) {
@@ -237,12 +239,10 @@ public final class DialogMenuService {
                     cfg.duration(kit.cooldownMillis())));
         }
         if (kit.maxClaims() > 0) {
-            KitRecord rec = data == null ? null : data.existingRecord(kit.id());
             int used = rec == null ? 0 : rec.totalClaims();
             lines.add(cfg.message("menu.tooltip.total",
                     Map.of("used", String.valueOf(used), "max", String.valueOf(kit.maxClaims()))));
         }
-        KitRecord rec = data == null ? null : data.existingRecord(kit.id());
         for (Map.Entry<PeriodType, Integer> e : kit.periodLimits().entrySet()) {
             if (e.getValue() <= 0) {
                 continue;

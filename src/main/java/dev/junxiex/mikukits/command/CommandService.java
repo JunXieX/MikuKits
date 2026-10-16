@@ -12,6 +12,7 @@ import io.papermc.paper.command.brigadier.Commands;
 import io.papermc.paper.command.brigadier.argument.ArgumentTypes;
 import io.papermc.paper.command.brigadier.argument.resolvers.selector.PlayerSelectorArgumentResolver;
 import io.papermc.paper.plugin.lifecycle.event.types.LifecycleEvents;
+import net.kyori.adventure.text.Component;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 
@@ -104,16 +105,35 @@ public final class CommandService {
             sender.sendMessage(plugin.configManager().message("command.player-not-found"));
             return 0;
         }
-        // 发放必须在目标玩家线程；结果反馈回给指令执行者而非目标玩家
-        target.getScheduler().run(plugin, t -> plugin.dispatcher().forceGive(target, kit, sender), null);
+        // 发放必须在目标玩家线程；结果反馈需回到执行者自己的线程：
+        // Folia 下执行者可能是另一区域的玩家，跨线程访问其实体属非法操作
+        boolean scheduled = target.getScheduler().run(plugin,
+                t -> plugin.dispatcher().forceGive(target, kit, msg -> feedback(sender, msg)), null) != null;
+        if (!scheduled) {
+            // 目标恰在调度前被移除/离线：给出明确反馈，避免管理员以为发放成功
+            feedback(sender, plugin.configManager().message("command.give-offline",
+                    Map.of("player", target.getName(), "kit", kit.id())));
+        }
         return 1;
     }
 
+    /** 把反馈投递到执行者自身线程；控制台无实体归属，可直接发送。 */
+    private void feedback(CommandSender sender, Component message) {
+        if (sender instanceof Player p) {
+            // 执行者可能是另一区域线程上的玩家，发送消息必须回到其自身线程
+            p.getScheduler().run(plugin, t -> p.sendMessage(message), null);
+        } else {
+            sender.sendMessage(message);
+        }
+    }
+
     private int reload(CommandContext<CommandSourceStack> ctx) {
-        plugin.reloadConfigs();
-        ctx.getSource().getSender().sendMessage(
-                plugin.configManager().message("command.reload",
-                        Map.of("count", String.valueOf(plugin.kitManager().size()))));
+        // 重载在全局区域线程完成，反馈须延后到配置真正生效之后、且投递回执行者自身线程
+        CommandSender sender = ctx.getSource().getSender();
+        plugin.reloadConfigs(ok -> feedback(sender, ok
+                ? plugin.configManager().message("command.reload",
+                        Map.of("count", String.valueOf(plugin.kitManager().size())))
+                : plugin.configManager().message("command.reload-failed")));
         return 1;
     }
 
