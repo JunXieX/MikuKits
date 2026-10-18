@@ -63,7 +63,10 @@ public final class LimitService {
         long now = System.currentTimeMillis();
 
         if (!bypassCooldown && kit.cooldownMillis() > 0 && rec != null) {
-            if (now - rec.lastClaimAt() < kit.cooldownMillis()) {
+            long elapsed = now - rec.lastClaimAt();
+            // elapsed < 0 表示系统时钟被回拨（NTP 校正、手动改时间）。此时按"已过冷却"处理：
+            // 若照常比较，负的 elapsed 永远小于 cooldown，玩家会被卡到时钟追上为止，表现为冷却永久不结束
+            if (elapsed >= 0 && elapsed < kit.cooldownMillis()) {
                 return LimitResult.COOLDOWN;
             }
         }
@@ -97,6 +100,10 @@ public final class LimitService {
             return 0L;
         }
         long elapsed = System.currentTimeMillis() - rec.lastClaimAt();
+        // 时钟回拨时 elapsed 为负，按"无冷却"处理，避免剩余时间被算成一个巨大的正数
+        if (elapsed < 0) {
+            return 0L;
+        }
         return Math.max(0L, kit.cooldownMillis() - elapsed);
     }
 

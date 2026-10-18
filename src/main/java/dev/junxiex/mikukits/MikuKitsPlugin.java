@@ -7,6 +7,7 @@ import dev.junxiex.mikukits.data.PlayerDataStore;
 import dev.junxiex.mikukits.dialog.DialogMenuService;
 import dev.junxiex.mikukits.kit.Kit;
 import dev.junxiex.mikukits.kit.KitManager;
+import dev.junxiex.mikukits.kit.reward.MoneyReward;
 import dev.junxiex.mikukits.listener.CustomClickListener;
 import dev.junxiex.mikukits.listener.PlayerConnectionListener;
 import dev.junxiex.mikukits.reward.RewardDispatcher;
@@ -90,6 +91,28 @@ public final class MikuKitsPlugin extends JavaPlugin {
         getLogger().info("已加载 " + kitManager.size() + " 个礼包");
     }
 
+    /**
+     * 启动期检查"配了金钱奖励但没有 Vault"的情况。
+     * <p>
+     * 1.4.1 起金钱发放失败会被正确计为失败（不消耗次数），但若服主漏装 Vault，
+     * 该礼包的每次领取都会失败、玩家反复看到"发放失败"，很难自行定位。
+     * 这里在启动时就点明原因，避免上线后才发现。
+     */
+    private void warnUnusableMoneyRewards() {
+        if (vaultHook.available()) {
+            return;
+        }
+        for (Kit kit : kitManager.all()) {
+            boolean hasMoney = kit.rewards().stream()
+                    .anyMatch(r -> r instanceof MoneyReward);
+            if (hasMoney) {
+                getLogger().warning("礼包 " + kit.id()
+                        + " 配置了 money 奖励，但服务器未安装 Vault（或没有 Economy 提供者），"
+                        + "该礼包的领取将始终失败。请安装 Vault + 经济插件，或移除这项奖励。");
+            }
+        }
+    }
+
     @Override
     public void onDisable() {
         // 存储初始化失败时 dataStore 为 null，需判空避免 NPE
@@ -153,6 +176,7 @@ public final class MikuKitsPlugin extends JavaPlugin {
     private void applyGlobalState(Map<String, Kit> kits) {
         registerKitPermissions(kits);
         scheduleFlush();
+        warnUnusableMoneyRewards();
     }
 
     /**
@@ -179,41 +203,56 @@ public final class MikuKitsPlugin extends JavaPlugin {
      */
     private void registerKitPermissions(Map<String, Kit> kits) {
         PluginManager pm = getServer().getPluginManager();
-        Set<String> current = new HashSet<>();
         Map<String, PermissionDefault> nodeDefaults = new HashMap<>();
         for (Kit kit : kits.values()) {
             String node = kit.permission();
-            current.add(node);
             PermissionDefault previousDefault = nodeDefaults.putIfAbsent(node, kit.permissionDefault());
             if (previousDefault != null && previousDefault != kit.permissionDefault()) {
                 // 多个礼包复用同一权限节点却声明了不同默认值：最终只有一个默认值生效，
                 // 且取决于解析顺序，属难以排查的配置冲突，必须显式告警
                 getLogger().warning("权限节点 '" + node + "' 被多个礼包复用且 permission-default 不一致（"
                         + previousDefault + " / " + kit.permissionDefault() + "），仅其中一个会生效");
+                continue;
             }
             Permission existing = pm.getPermission(node);
-            if (existing != null) {
-                if (existing.getDefault() == kit.permissionDefault()) {
-                    continue;
+            if (existing == null) {
+                try {
+                    pm.addPermission(new Permission(node, "领取礼包 " + kit.id(), kit.permissionDefault()));
+                    // 只有真正注册成功才记为"本插件拥有"，后续清理才不会误删他人节点
+                    registeredKitPermissions.add(node);
+                } catch (IllegalArgumentException ex) {
+                    getLogger().warning("礼包 " + kit.id() + " 的权限节点 '" + node + "' 非法，已忽略");
                 }
-                // permission-default 被改过：重新注册才能让新默认值生效
-                pm.removePermission(node);
+                continue;
             }
-            try {
-                pm.addPermission(new Permission(node, "领取礼包 " + kit.id(), kit.permissionDefault()));
-            } catch (IllegalArgumentException ex) {
-                getLogger().warning("礼包 " + kit.id() + " 的权限节点 '" + node + "' 非法，已忽略");
+            if (existing.getDefault() == kit.permissionDefault()) {
+                // 已存在且默认值一致：可能本次是重载、也可能节点本来就是别人的。
+                // 只有原本就登记在本插件名下时才保持所有权，不能在这里无条件认领他人的节点
+                continue;
             }
+            if (!registeredKitPermissions.contains(node)) {
+                // 同名节点由其他插件（或其 plugin.yml）注册，本插件从未拥有它。
+                // 强行改写或删除都会影响别的插件，这里只提示冲突，交由服主在权限插件中显式设置。
+                getLogger().warning("权限节点 '" + node + "' 已由其他插件注册且默认值不同（已有 "
+                        + existing.getDefault() + "，礼包声明 " + kit.permissionDefault()
+                        + "），保留已有注册；如需生效请在权限插件中显式设置");
+                continue;
+            }
+            // 本插件自己注册过、且 permission-default 被改过：就地改默认值，避免删了再加导致节点短暂消失
+            existing.setDefault(kit.permissionDefault());
         }
-        // 清理已删除礼包遗留的权限节点，避免其默认值长期残留
+        // 清理已删除礼包遗留的权限节点：registeredKitPermissions 只含本插件注册成功的节点
+        Set<String> desired = new HashSet<>();
+        for (Kit kit : kits.values()) {
+            desired.add(kit.permission());
+        }
         registeredKitPermissions.removeIf(node -> {
-            if (current.contains(node)) {
+            if (desired.contains(node)) {
                 return false;
             }
             pm.removePermission(node);
             return true;
         });
-        registeredKitPermissions.addAll(current);
     }
 
     private void registerPermission(PluginManager pm, String name, String description, PermissionDefault def) {

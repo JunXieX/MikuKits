@@ -65,10 +65,12 @@ public final class PlayerConnectionListener implements Listener {
     public void onQuit(PlayerQuitEvent event) {
         Player player = event.getPlayer();
         PlayerKitData data = plugin.dataStore().get(player.getUniqueId());
+        // data 为 null 表示该玩家本次会话的数据尚未加载完成（例如进服后立刻退出）：
+        // 此时内存里根本没有他的记录，既无需入队，也不该对不存在的缓存做移除
         if (data != null) {
             plugin.dataStore().enqueueAll(data);
+            plugin.dataStore().remove(player.getUniqueId());
         }
-        plugin.dataStore().remove(player.getUniqueId());
     }
 
     /**

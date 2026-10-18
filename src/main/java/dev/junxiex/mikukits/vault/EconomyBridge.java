@@ -20,11 +20,29 @@ final class EconomyBridge {
                 .getRegistration(net.milkbowl.vault.economy.Economy.class) != null;
     }
 
-    static void deposit(Player player, double amount) {
+    /**
+     * 向玩家存款。
+     * <p>
+     * Vault 的 {@code depositPlayer} 会返回 {@link net.milkbowl.vault.economy.EconomyResponse}，
+     * 经济插件可以用它报告失败（例如账户被冻结、数额非法）。忽略返回值会把失败当成功，
+     * 导致玩家没拿到钱却被扣掉领取次数，因此必须检查 {@code transactionSuccess()}。
+     *
+     * @return true 表示经济插件确认存款成功
+     */
+    static boolean deposit(Player player, double amount) {
         var rsp = Bukkit.getServicesManager()
                 .getRegistration(net.milkbowl.vault.economy.Economy.class);
-        if (rsp != null) {
-            rsp.getProvider().depositPlayer(player, amount);
+        if (rsp == null) {
+            return false;
         }
+        net.milkbowl.vault.economy.EconomyResponse response = rsp.getProvider().depositPlayer(player, amount);
+        if (response == null) {
+            return false;
+        }
+        if (!response.transactionSuccess()) {
+            Bukkit.getLogger().warning("Vault 存款未成功: " + response.errorMessage);
+            return false;
+        }
+        return true;
     }
 }

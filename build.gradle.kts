@@ -3,7 +3,7 @@ plugins {
 }
 
 group = "dev.junxiex"
-version = "1.4.1"
+version = "1.4.2"
 description = "MikuKits - Paper/Folia kit plugin with dialog menus"
 
 java {

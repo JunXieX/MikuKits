@@ -50,9 +50,9 @@ public final class KitRecord {
         this.lastClaimAt = v;
     }
 
-    /** 从存储加载总领取次数。 */
+    /** 从存储加载总领取次数。负数会让次数上限判断失效，一律按 0 处理。 */
     public void loadTotalClaims(int v) {
-        this.totalClaims = v;
+        this.totalClaims = Math.max(0, v);
     }
 
     public void incrementTotalClaims() {
@@ -113,6 +113,11 @@ public final class KitRecord {
             try {
                 count = Integer.parseInt(part.substring(colon + 1));
             } catch (NumberFormatException ex) {
+                count = 0;
+            }
+            // 负数计数会让"used >= limit"恒不成立，等于白送无限次数。
+            // 数据库被手工修改或旧版本写坏时可能出现，一律按 0 处理
+            if (count < 0) {
                 count = 0;
             }
             periods.put(type, new PeriodCounter(key, count));

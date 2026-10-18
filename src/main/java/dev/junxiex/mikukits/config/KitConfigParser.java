@@ -50,7 +50,7 @@ public final class KitConfigParser {
         ItemStack icon = readIcon(id, sec);
         boolean autoClaim = sec.getBoolean("auto-claim", false);
         long cooldownMillis = readCooldownMillis(id, sec);
-        int maxClaims = sec.getInt("max-claims", 0);
+        int maxClaims = readMaxClaims(id, sec);
         int sortOrder = sec.getInt("sort-order", 0);
 
         Map<PeriodType, Integer> periodLimits = new EnumMap<>(PeriodType.class);
@@ -66,6 +66,11 @@ public final class KitConfigParser {
                 int v = pl.getInt(key, 0);
                 if (v > 0) {
                     periodLimits.put(type, v);
+                } else {
+                    // 0/负数会被判定处跳过（等于该周期不限制）。服主写下这个键显然是想限制，
+                    // 结果却是完全不限制，属静默反转，必须告警
+                    logger.warning("礼包 " + id + " 的 period-limits." + key + "=" + v
+                            + " 非正数，该周期将不做限制；如需限制请填写正整数");
                 }
             }
         }
@@ -119,6 +124,23 @@ public final class KitConfigParser {
             return Long.MAX_VALUE;
         }
         return seconds * 1000L;
+    }
+
+    /**
+     * 读取总领取次数上限。
+     * <p>
+     * 配置语义是"0 表示不限"，负数没有定义。而判定处用的是 {@code maxClaims > 0}，
+     * 负数会被静默当作"不限次数"——服主本想限制却写错符号，就会得到一个可无限领取的礼包。
+     * 这类错误必须显式告警，不能靠"恰好等价于不限"蒙混过去。
+     */
+    private int readMaxClaims(String kitId, ConfigurationSection sec) {
+        int value = sec.getInt("max-claims", 0);
+        if (value < 0) {
+            logger.warning("礼包 " + kitId + " 的 max-claims=" + value
+                    + " 为负数，已按 0（不限次数）处理；如需限制请填写正整数");
+            return 0;
+        }
+        return value;
     }
 
     private static ConfigurationSection toSection(Map<?, ?> map) {
