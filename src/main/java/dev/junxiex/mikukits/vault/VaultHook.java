@@ -47,19 +47,28 @@ public final class VaultHook {
         return available;
     }
 
-    /** 向玩家存款。Vault 不可用时静默跳过（仅在真正需要发放金钱时提示一次）。必须在玩家线程调用。 */
-    public void deposit(Player player, double amount) {
+    /**
+     * 向玩家存款。
+     * <p>
+     * 返回是否真的发放成功。调用方（{@link dev.junxiex.mikukits.kit.reward.MoneyReward}）必须据此
+     * 判定奖励是否落地：若此处静默返回，则该奖励会被计为"发放成功"，玩家没拿到钱却照常消耗领取次数。
+     *
+     * @return true 表示存款已执行；false 表示 Vault 不可用或存款抛错
+     */
+    public boolean deposit(Player player, double amount) {
         if (!available()) {
             if (!warned) {
                 warned = true;
                 plugin.getLogger().warning("未检测到 Vault Economy，金钱奖励将被跳过。");
             }
-            return;
+            return false;
         }
         try {
             EconomyBridge.deposit(player, amount);
+            return true;
         } catch (Throwable t) {
             plugin.getLogger().warning("Vault 存款失败: " + t.getMessage());
+            return false;
         }
     }
 }

@@ -1,5 +1,5 @@
 name: MikuKits
-version: '1.4.0'
+version: '1.4.1'
 main: dev.junxiex.mikukits.MikuKitsPlugin
 loader: dev.junxiex.mikukits.MikuKitsLoader
 api-version: '26.2'
