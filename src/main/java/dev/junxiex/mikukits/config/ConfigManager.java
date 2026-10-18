@@ -10,12 +10,18 @@ import net.kyori.adventure.text.minimessage.MiniMessage;
 import org.bukkit.configuration.file.YamlConfiguration;
 
 import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
 
@@ -61,7 +67,7 @@ public final class ConfigManager {
         this.parser = new KitConfigParser(plugin.getLogger());
     }
 
-    /** 重新加载全部配置，返回解析出的礼包表。 */
+    /** 重新加载全部配置，返回解析出的礼包表。所有内容解析完成后才发布新快照。 */
     public Map<String, Kit> loadAll() {
         saveDefault("config.yml");
         saveDefault("messages.yml");
@@ -84,6 +90,11 @@ public final class ConfigManager {
         int clickThrottleMillis = Math.max(0, config.getInt("menu.click-throttle-ms", DEFAULT_THROTTLE_MS));
 
         Map<String, String> newMessages = new HashMap<>();
+        // 先铺一层 JAR 内置默认值：老服务器的 messages.yml 不会随版本升级自动补键，
+        // 缺了新增 key 就会渲染成"缺少消息"。内置默认值兜底后，新增文案对老存档同样即时可用，
+        // 同时不覆盖玩家已有的任何自定义内容。
+        Map<String, String> bundled = loadBundledMessages();
+        newMessages.putAll(bundled);
         YamlConfiguration msg = YamlConfiguration.loadConfiguration(new File(plugin.getDataFolder(), "messages.yml"));
         for (String key : msg.getKeys(true)) {
             String value = msg.getString(key);
@@ -91,6 +102,7 @@ public final class ConfigManager {
                 newMessages.put(key, value);
             }
         }
+        warnMissingMessageKeys(msg, bundled.keySet());
         Map<String, String> messages = Map.copyOf(newMessages);
 
         // 不含占位符 {xxx} 的模板渲染结果恒定，预解析后可跳过每次的 MiniMessage 解析
@@ -109,11 +121,6 @@ public final class ConfigManager {
                     ? type.name()
                     : plain(mm.deserialize(applyPrefix(raw, messages))));
         }
-
-        // 配置已变，旧渲染缓存一律作废（键虽等价安全，但清掉以免长期占用）
-        renderCache.clear();
-        snapshot = new Snapshot(messages, Map.copyOf(constants), Map.copyOf(periodNames),
-                menuPageSize, flushIntervalSeconds, clickThrottleMillis);
 
         Map<String, Kit> kits = new HashMap<>();
         File[] files = kitsDir.listFiles((d, n) -> n.toLowerCase(Locale.ROOT).endsWith(".yml"));
@@ -134,7 +141,56 @@ public final class ConfigManager {
                 }
             }
         }
+
+        // 全部内容解析成功后才发布快照：否则一旦后续解析抛错，会出现"消息已是新的、礼包还是旧的"
+        // 这种半成品状态，与 reload 失败时"保留原有配置"的承诺不符。
+        // 旧渲染缓存一并作废（键虽等价安全，但清掉以免长期占用）。
+        renderCache.clear();
+        snapshot = new Snapshot(messages, Map.copyOf(constants), Map.copyOf(periodNames),
+                menuPageSize, flushIntervalSeconds, clickThrottleMillis);
+
         return kits;
+    }
+
+    /**
+     * 列出磁盘 messages.yml 相对内置默认值缺失的键并告警。
+     * <p>
+     * 这些键会回退到内置默认值（不会显示成"缺少消息"），但玩家可能是在升级后漏了新增项、
+     * 或误删了自己想改的条目，必须让服主知道，而不是静默生效。
+     */
+    private void warnMissingMessageKeys(YamlConfiguration msg, Set<String> bundledKeys) {
+        Set<String> missing = new TreeSet<>();
+        for (String key : bundledKeys) {
+            if (!msg.isSet(key)) {
+                missing.add(key);
+            }
+        }
+        if (!missing.isEmpty()) {
+            plugin.getLogger().warning("messages.yml 缺少 " + missing.size()
+                    + " 个键，已使用内置默认文案: " + String.join(", ", missing));
+        }
+    }
+
+    /** 读取 JAR 内置的 messages.yml 作为缺失键的兜底（仅默认值，不写回磁盘）。 */
+    private Map<String, String> loadBundledMessages() {
+        Map<String, String> defaults = new HashMap<>();
+        try (InputStream in = plugin.getResource("messages.yml")) {
+            if (in == null) {
+                return defaults;
+            }
+            YamlConfiguration bundled = YamlConfiguration.loadConfiguration(
+                    new InputStreamReader(in, StandardCharsets.UTF_8));
+            for (String key : bundled.getKeys(true)) {
+                String value = bundled.getString(key);
+                if (value != null) {
+                    defaults.put(key, value);
+                }
+            }
+        } catch (IOException | RuntimeException ex) {
+            // 兜底失败不影响主流程：仍以磁盘 messages.yml 为准
+            plugin.getLogger().warning("读取内置默认消息失败: " + ex.getMessage());
+        }
+        return defaults;
     }
 
     /** 取 MiniMessage 消息并渲染为 Component；缺失时使用可配置的 error.missing-message 兜底。 */
