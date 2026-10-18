@@ -18,33 +18,40 @@ public final class VaultHook {
 
     private final Plugin plugin;
     private volatile boolean available;
-    private volatile boolean resolved;
     private volatile boolean warned;
 
     public VaultHook(Plugin plugin) {
         this.plugin = plugin;
     }
 
-    /** 探测 Vault + Economy 是否可用（幂等，线程安全）。仅查询状态，不产生日志。 */
+    /**
+     * 探测 Vault + Economy 是否可用（线程安全）。
+     * <p>
+     * 只缓存"可用"这一正结果；不可用时每次都重新探测。原因：经济插件（Essentials 等）
+     * 可能比本插件晚加载，或服主在运行期新装/卸载经济插件。若把 false 永久缓存，
+     * 金钱奖励会一直被判为不可用，配合"发放失败不消耗次数"的逻辑，该礼包将永远无法领取。
+     * 探测本身只是一次 ServicesManager 的 map 查询，开销可忽略。
+     */
     public boolean available() {
-        if (!resolved) {
-            synchronized (this) {
-                if (!resolved) {
-                    boolean ok = false;
-                    try {
-                        if (Bukkit.getPluginManager().getPlugin("Vault") != null) {
-                            ok = EconomyBridge.hasEconomy();
-                        }
-                    } catch (Throwable ignored) {
-                        // Vault 类缺失（NoClassDefFoundError）→ 视为不可用
-                        ok = false;
-                    }
-                    available = ok;
-                    resolved = true;
-                }
-            }
+        if (available) {
+            return true;
         }
-        return available;
+        synchronized (this) {
+            if (available) {
+                return true;
+            }
+            boolean ok = false;
+            try {
+                if (Bukkit.getPluginManager().getPlugin("Vault") != null) {
+                    ok = EconomyBridge.hasEconomy();
+                }
+            } catch (Throwable ignored) {
+                // Vault 类缺失（NoClassDefFoundError）→ 视为不可用
+                ok = false;
+            }
+            available = ok;
+            return ok;
+        }
     }
 
     /**
@@ -59,7 +66,7 @@ public final class VaultHook {
         if (!available()) {
             if (!warned) {
                 warned = true;
-                plugin.getLogger().warning("未检测到 Vault Economy，金钱奖励将被跳过。");
+                plugin.getLogger().warning("未检测到 Vault Economy，金钱奖励无法发放（本次领取按失败处理，不消耗次数）。");
             }
             return false;
         }

@@ -226,6 +226,8 @@ public final class MikuKitsPlugin extends JavaPlugin {
                 continue;
             }
             if (existing.getDefault() == kit.permissionDefault()) {
+                // 已存在且默认值一致：可能本次是重载、也可能节点本来就是别人的。
+                // 只有原本就登记在本插件名下时才保持所有权，不能在这里无条件认领他人的节点
                 continue;
             }
             if (!registeredKitPermissions.contains(node)) {
