@@ -63,7 +63,13 @@ public final class RewardDispatcher {
 
         LimitResult result = plugin.limitService().check(player, kit, data, bypassCooldown, bypassLimit);
         MikuKitPreClaimEvent pre = new MikuKitPreClaimEvent(player, kit, result);
-        plugin.getServer().getPluginManager().callEvent(pre);
+        // 第三方监听器抛异常不能让领取流程中断：此处尚未发放任何奖励，
+        // 若异常上抛，玩家看到的是"没反应"，而调用方也不会记录任何状态，属可接受的中止点
+        try {
+            plugin.getServer().getPluginManager().callEvent(pre);
+        } catch (Exception ex) {
+            plugin.getLogger().warning("MikuKitPreClaimEvent 监听器异常（礼包 " + kit.id() + "）: " + ex.getMessage());
+        }
         if (pre.isCancelled()) {
             return LimitResult.CANCELLED;
         }
@@ -77,9 +83,16 @@ public final class RewardDispatcher {
             return LimitResult.FAILED;
         }
 
+        // 顺序至关重要：先记录次数再触发事件。若反过来，第三方监听器抛异常会让流程在
+        // "奖励已发出、次数未记录"处中断，玩家可反复领取同一礼包
         plugin.limitService().recordClaim(kit, data);
         plugin.dataStore().enqueue(data, kit.id());
-        plugin.getServer().getPluginManager().callEvent(new MikuKitClaimEvent(player, kit));
+        try {
+            plugin.getServer().getPluginManager().callEvent(new MikuKitClaimEvent(player, kit));
+        } catch (Exception ex) {
+            // 此时奖励已发放且次数已记录，事件异常只影响第三方扩展，不应回滚也不应上报为领取失败
+            plugin.getLogger().warning("MikuKitClaimEvent 监听器异常（礼包 " + kit.id() + "）: " + ex.getMessage());
+        }
         return LimitResult.OK;
     }
 
@@ -116,11 +129,14 @@ public final class RewardDispatcher {
      * 逐个发放奖励；单个奖励失败不影响其余奖励与领取记录。
      * 背包溢出提示在此处统一发送一次，避免同一礼包多件物品溢出时刷屏。
      *
-     * @return 是否至少成功发放了一项（未配置奖励时视为成功）
+     * @return 是否至少成功发放了一项（未配置奖励时视为失败：空礼包不该消耗领取次数）
      */
     private boolean grantAll(Player player, Kit kit) {
         if (kit.rewards().isEmpty()) {
-            return true;
+            // 空奖励礼包通常是配置写错（奖励项全被跳过）。若当作成功，玩家会白白消耗一次领取机会，
+            // 且什么都没拿到，因此按失败处理并把原因写进日志
+            plugin.getLogger().warning("礼包 " + kit.id() + " 没有任何有效奖励，本次发放按失败处理，不消耗领取次数");
+            return false;
         }
         int succeeded = 0;
         long overflowed = 0;

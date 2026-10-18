@@ -15,7 +15,11 @@ public record PlayerCommandReward(String command) implements Reward {
     public int grant(Player player, Plugin plugin) {
         String resolved = PlaceholderResolver.resolve(command, player);
         // performCommand 不接受前导斜杠，容错处理配置里多写的 "/"
-        player.performCommand(stripSlash(resolved));
+        // 返回值表示指令是否真正执行成功（未知指令/被拒绝时为 false）。忽略它会把失败当成功，
+        // 玩家什么都没拿到却被扣掉领取次数，因此必须抛出交由调用方计入失败。
+        if (!player.performCommand(stripSlash(resolved))) {
+            throw new IllegalStateException("玩家指令执行失败（指令不存在或无权限）: " + resolved);
+        }
         return 0; // 指令不进背包，不存在溢出
     }
 

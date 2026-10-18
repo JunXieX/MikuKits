@@ -39,9 +39,13 @@ public final class ConfigManager {
     private static final int PAGE_SIZE_MIN = 1;
     private static final int PAGE_SIZE_MAX = 20;
     private static final int FLUSH_SECONDS_MIN = 5;
+    /** 写回间隔上限：避免配置成极大值后，内存中长时间积压未落库的领取记录。 */
+    private static final int FLUSH_SECONDS_MAX = 600;
     private static final int DEFAULT_PAGE_SIZE = 8;
     private static final int DEFAULT_FLUSH_SECONDS = 30;
     private static final int DEFAULT_THROTTLE_MS = 200;
+    /** 点击节流上限：再大就会让正常操作明显卡顿，且现象只是"点了没反应"，难以自查。 */
+    private static final int THROTTLE_MS_MAX = 5000;
     /** 渲染结果缓存上限；超出后不再新增（只读旧条目），避免玩家名等非常量文本无限堆积。 */
     private static final int RENDER_CACHE_MAX = 2048;
 
@@ -85,9 +89,20 @@ public final class ConfigManager {
                     + PAGE_SIZE_MIN + "-" + PAGE_SIZE_MAX + "，已自动钳制");
         }
         int menuPageSize = Math.max(PAGE_SIZE_MIN, Math.min(PAGE_SIZE_MAX, rawPageSize));
-        int flushIntervalSeconds = Math.max(FLUSH_SECONDS_MIN,
-                config.getInt("storage.flush-interval-seconds", DEFAULT_FLUSH_SECONDS));
-        int clickThrottleMillis = Math.max(0, config.getInt("menu.click-throttle-ms", DEFAULT_THROTTLE_MS));
+        int rawFlush = config.getInt("storage.flush-interval-seconds", DEFAULT_FLUSH_SECONDS);
+        if (rawFlush > FLUSH_SECONDS_MAX) {
+            // 写回间隔过长意味着内存里会积压很久未落库的领取记录，一旦进程异常退出就全丢
+            plugin.getLogger().warning("config.yml 的 storage.flush-interval-seconds=" + rawFlush
+                    + " 过大，已钳制为 " + FLUSH_SECONDS_MAX + " 秒");
+        }
+        int flushIntervalSeconds = Math.max(FLUSH_SECONDS_MIN, Math.min(FLUSH_SECONDS_MAX, rawFlush));
+        int rawThrottle = config.getInt("menu.click-throttle-ms", DEFAULT_THROTTLE_MS);
+        if (rawThrottle > THROTTLE_MS_MAX) {
+            // 填成很大的值（如 60000）会让玩家几乎点不动菜单，且现象是"点了没反应"，很难自查
+            plugin.getLogger().warning("config.yml 的 menu.click-throttle-ms=" + rawThrottle
+                    + " 过大，已钳制为 " + THROTTLE_MS_MAX + " 毫秒");
+        }
+        int clickThrottleMillis = Math.max(0, Math.min(THROTTLE_MS_MAX, rawThrottle));
 
         Map<String, String> newMessages = new HashMap<>();
         // 先铺一层 JAR 内置默认值：老服务器的 messages.yml 不会随版本升级自动补键，
@@ -276,7 +291,8 @@ public final class ConfigManager {
         if (millis <= 0) {
             return message("time.zero");
         }
-        long s = millis / 1000;
+        // 向上取整：剩余 400ms 时仍在冷却中，若按整除会显示"0秒"，让玩家误以为已可领取
+        long s = (millis + 999L) / 1000L;
         long days = s / 86400;
         long hours = (s % 86400) / 3600;
         long minutes = (s % 3600) / 60;

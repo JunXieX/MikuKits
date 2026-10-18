@@ -64,8 +64,7 @@ public final class VaultHook {
             return false;
         }
         try {
-            EconomyBridge.deposit(player, amount);
-            return true;
+            return EconomyBridge.deposit(player, amount);
         } catch (Throwable t) {
             plugin.getLogger().warning("Vault 存款失败: " + t.getMessage());
             return false;

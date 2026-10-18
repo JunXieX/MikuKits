@@ -8,6 +8,10 @@ import java.util.Map;
 /**
  * 控制台指令奖励。占位符 {player}/{world}/{x}/{y}/{z} 在发放前替换。
  * 实际执行投递到 GlobalRegionScheduler（控制台命令是全局操作）。
+ * <p>
+ * 该动作是异步投递的，本方法返回时指令尚未执行，因此无法据此判断成败；
+ * 这里不做虚假的"成功/失败"承诺，只保证指令一定被投递出去。
+ * 若指令拼错，控制台会打印"未知指令"，服主可据此修正配置。
  */
 public record ConsoleCommandReward(String command) implements Reward {
 

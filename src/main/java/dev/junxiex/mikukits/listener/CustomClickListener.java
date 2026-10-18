@@ -107,7 +107,9 @@ public final class CustomClickListener implements Listener {
         // compute 对同一 key 原子执行，消除"读取-判断-写入"竞态，避免并发的伪造包同时通过节流
         boolean[] rejected = {false};
         lastClickAt.compute(uuid, (key, previous) -> {
-            if (previous != null && now - previous < throttle) {
+            // elapsed 为负说明系统时钟被回拨：此时不能把玩家当成"连点"，直接放行并刷新时间戳
+            long elapsed = previous == null ? Long.MAX_VALUE : now - previous;
+            if (elapsed >= 0 && elapsed < throttle) {
                 // 仅记录被接受的点击：否则持续刷包会把时间戳一路顶高，让正常玩家被无限锁死
                 rejected[0] = true;
                 return previous;
