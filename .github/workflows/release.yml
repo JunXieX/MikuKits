@@ -36,6 +36,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: MikuKits
+          retention-days: 1
           path: build/libs/*.jar
 
       - name: Extract release notes from tagged commit
